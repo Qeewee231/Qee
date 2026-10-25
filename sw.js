@@ -1,8 +1,8 @@
 // سرویس‌ورکر: اجرای آفلاین + دکمه‌های اعلان
-const CACHE = 'monshi-v1';
+const CACHE = 'monshi-v2';
 const ASSETS = [
   './', 'index.html', 'css/style.css', 'manifest.webmanifest',
-  'js/app.js', 'js/store.js', 'js/parser.js', 'js/jalali.js', 'js/classifier.js', 'js/analytics.js', 'js/reminders.js',
+  'js/app.js', 'js/store.js', 'js/parser.js', 'js/jalali.js', 'js/classifier.js', 'js/analytics.js', 'js/reminders.js', 'js/contacts.js', 'js/native.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 

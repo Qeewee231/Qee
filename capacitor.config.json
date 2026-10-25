@@ -1,0 +1,14 @@
+{
+  "appId": "ir.monshi.app",
+  "appName": "منشی من",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#f4f5fb"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_monshi",
+      "iconColor": "#3b4cca"
+    }
+  }
+}

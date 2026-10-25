@@ -2,6 +2,7 @@
 import { state, save } from './store.js';
 import { formatTime, pad2 } from './jalali.js';
 import { categoryById } from './classifier.js';
+import { isNative } from './native.js';
 
 const MISSED_WINDOW = 12 * 3600000; // یادآوری‌های جاافتاده تا ۱۲ ساعت بعد هم نمایش داده می‌شوند
 
@@ -58,13 +59,14 @@ export function startScheduler(onFire) {
       t.reminded = true;
       changed = true;
       if (now - at > MISSED_WINDOW) continue;
-      notify(`🔔 ${t.title}`, {
+      // در نسخهٔ اندروید اعلان را خود سیستم (از قبل زمان‌بندی‌شده) نمایش می‌دهد
+      if (!isNative) notify(`🔔 ${t.title}`, {
         body: reminderBody(t), tag: t.id, renotify: true, requireInteraction: true,
         dir: 'rtl', lang: 'fa', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png',
         data: { id: t.id },
         actions: [{ action: 'done', title: '✅ انجام شد' }, { action: 'snooze', title: '⏱ ۱۰ دقیقه بعد' }],
       });
-      beep();
+      if (!isNative) beep();
       onFire?.(t);
     }
     if (changed) save();
@@ -89,7 +91,7 @@ function morningBrief(onFire) {
  * تا حتی وقتی برنامه بسته است هم برسند.
  */
 export async function scheduleAhead() {
-  if (typeof window.TimestampTrigger !== 'function' || Notification.permission !== 'granted') return;
+  if (isNative || typeof window.TimestampTrigger !== 'function' || Notification.permission !== 'granted') return;
   const reg = await navigator.serviceWorker?.getRegistration();
   if (!reg) return;
   for (const t of state.tasks) {

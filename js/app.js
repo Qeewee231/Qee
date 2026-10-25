@@ -1,4 +1,6 @@
-import { state, save, subscribe, addTask, updateTask, deleteTask, completeTask, uncompleteTask, postponeTask, snooze, exportData, importData, clearAll } from './store.js';
+import { state, save, subscribe, addTask, updateTask, deleteTask, completeTask, uncompleteTask, postponeTask, snooze, exportData, importData, clearAll, addContact, deleteContact, contactById } from './store.js';
+import { extractContact, normalizePhone, smsText } from './contacts.js';
+import { isNative, initNative, syncNative, requestNativePermissions, nativePermission, requestSmsPermission, smsPermission, sendSmsNow, smsLink, smsSendAt, SMS_STATUS_TEXT } from './native.js';
 import { parseTask, describeDue } from './parser.js';
 import { CATEGORIES, categoryById, classify, learn } from './classifier.js';
 import { fa, formatJalali, formatTime, toJalali, WEEKDAYS, pad2 } from './jalali.js';
@@ -13,6 +15,8 @@ const REMIND = [['none', 'بدون یادآوری'], ['0', 'سر وقت'], ['5',
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240];
 
 let currentView = 'today';
+let nativePerm = 'default';
+const notifPermission = () => (isNative ? nativePerm : notificationsSupported() ? Notification.permission : 'unsupported');
 const filters = { cat: 'all', mode: 'upcoming', q: '' };
 
 // ---------------- اجزای مشترک ----------------
@@ -26,6 +30,8 @@ function taskItem(t, { showDate = false } = {}) {
   if (t.remindAt && !t.done) info.push('<span>🔔</span>');
   if (t.duration) info.push(`<span>⏳ ${fa(t.duration)} دقیقه</span>`);
   if (t.postponeCount >= 2 && !t.done) info.push(`<span>↪️ ${fa(t.postponeCount)} بار تعویق</span>`);
+  const smsContact = t.smsTo ? contactById(t.smsTo) : null;
+  if (smsContact) info.push(`<span>📩 ${esc(smsContact.name)}${t.smsStatus ? ' · ' + SMS_STATUS_TEXT[t.smsStatus] : ''}</span>`);
   if (t.priority >= 2 && !t.done) info.push(`<span class="flag">${PRIORITY[t.priority]}</span>`);
   return `<div class="task ${t.done ? 'done' : ''}" style="--cat:${cat.color}" data-id="${t.id}">
     <button class="check" data-act="toggle" aria-label="${t.done ? 'برگرداندن' : 'انجام شد'}">${t.done ? '✓' : ''}</button>
@@ -150,8 +156,8 @@ function renderStats() {
 // ---------------- تنظیمات ----------------
 function renderSettings() {
   const st = state.settings;
-  const perm = notificationsSupported() ? Notification.permission : 'unsupported';
-  const permText = { granted: '✅ فعال', denied: '⛔ مسدود (از تنظیمات مرورگر فعال کنید)', default: 'غیرفعال', unsupported: 'این مرورگر پشتیبانی نمی‌کند' }[perm];
+  const perm = notifPermission();
+  const permText = { granted: '✅ فعال', denied: `⛔ مسدود (از تنظیمات ${isNative ? 'گوشی' : 'مرورگر'} فعال کنید)`, default: 'غیرفعال', unsupported: 'این مرورگر پشتیبانی نمی‌کند' }[perm];
   const hours = (sel) => Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === sel ? 'selected' : ''}>${fa(pad2(h))}:۰۰</option>`).join('');
   return `<div class="settings">
     <h2>شخصی</h2>
@@ -165,6 +171,18 @@ function renderSettings() {
       <div class="field"><label for="sSound">صدا و لرزش</label><input id="sSound" type="checkbox" data-setting="sound" ${st.sound ? 'checked' : ''} style="width:auto"></div>
       <p class="note">💡 برای اطمینان صددرصد از یادآوری حتی وقتی برنامه بسته است، کارها را با دکمهٔ زیر به تقویم گوشی هم اضافه کنید.</p>
       <button class="btn" data-action="ics-all" style="width:100%">📆 افزودن همهٔ کارهای پیش رو به تقویم گوشی</button>
+    </div>
+    <h2>📩 یادآوری پیامکی به دیگران</h2>
+    <div class="card">
+      <p class="note">${isNative
+        ? 'کاری را به یک مخاطب بسپارید تا منشی سر وقت یادآوری، از سیم‌کارت شما به او پیامک بزند؛ حتی وقتی برنامه بسته است. هزینهٔ پیامک طبق تعرفهٔ اپراتور شماست.'
+        : 'در نسخهٔ اندروید (APK) پیامک‌ها خودکار ارسال می‌شوند. در این نسخه، سر وقت یادآوری دکمهٔ «ارسال پیامک» ظاهر می‌شود و برنامهٔ پیامک گوشی با متن آماده باز می‌شود.'}</p>
+      <div class="contacts">${state.contacts.map((c) => `<div class="contact"><span><b>${esc(c.name)}</b> · <span dir="ltr">${fa(c.phone)}</span></span><button class="btn danger" data-action="del-contact" data-cid="${c.id}">حذف</button></div>`).join('') || '<p class="note">هنوز مخاطبی اضافه نکرده‌اید.</p>'}</div>
+      <div class="row2"><input id="cName" class="search" placeholder="نام (مثلاً علی)"><input id="cPhone" class="search" type="tel" inputmode="tel" dir="ltr" placeholder="09123456789"></div>
+      <button class="btn" data-action="add-contact" style="width:100%;margin-top:8px">＋ افزودن مخاطب</button>
+      <label for="sTpl" class="note" style="display:block;margin-top:12px">متن پیامک ({نام}، {کار} و {زمان} جایگزین می‌شوند)</label>
+      <textarea id="sTpl" class="search" data-setting="smsTemplate" rows="2">${esc(st.smsTemplate)}</textarea>
+      <p class="note">در ثبت سریع بنویسید: «فردا ساعت ۹ تحویل گزارش <b>@علی</b>» یا «فردا ساعت ۹ تحویل گزارش، <b>به علی پیامک بده</b>».</p>
     </div>
     <h2>ساعات کاری (برای تحلیل حجم کار)</h2>
     <div class="card">
@@ -199,7 +217,7 @@ function render() {
   const now = new Date();
   $('#hello').textContent = `${greeting(now)}${state.settings.name ? '، ' + state.settings.name : ''}`;
   $('#todayDate').textContent = formatJalali(now, { year: true });
-  $('#bellBtn').classList.toggle('on', notificationsSupported() && Notification.permission === 'granted');
+  $('#bellBtn').classList.toggle('on', notifPermission() === 'granted');
   document.querySelectorAll('#tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.view === currentView));
   $('#quickAdd').hidden = currentView === 'settings' || currentView === 'stats';
   const view = $('#view');
@@ -242,9 +260,11 @@ const qaInput = $('#qaInput');
 function updatePreview() {
   const text = qaInput.value.trim();
   if (!text) { $('#previewChips').innerHTML = ''; return; }
-  const p = parseTask(text);
-  const cat = categoryById(p.category || classify(p.title || text, state.learned));
+  const { text: rest, contact } = extractContact(text, state.contacts);
+  const p = parseTask(rest);
+  const cat = categoryById(p.category || classify(p.title || rest, state.learned));
   const chips = [...p.chips.map((c) => c.text), `${cat.emoji} ${cat.name}`];
+  if (contact) chips.push(`📩 پیامک به ${contact.name}`);
   $('#previewChips').innerHTML = chips.map((c) => `<span class="chip">${esc(c)}</span>`).join('');
 }
 qaInput.addEventListener('input', updatePreview);
@@ -253,17 +273,20 @@ $('#quickAdd').addEventListener('submit', (e) => {
   e.preventDefault();
   const text = qaInput.value.trim();
   if (!text) return;
-  const p = parseTask(text);
-  const title = p.title || text;
+  const { text: rest, contact } = extractContact(text, state.contacts);
+  const p = parseTask(rest);
+  const title = p.title || rest;
   const task = addTask({
     title, due: p.due, hasTime: p.hasTime, priority: p.priority, recurrence: p.recurrence,
     remindOffset: p.remindOffset, duration: p.duration, category: p.category || classify(title, state.learned),
+    smsTo: contact?.id || null,
   });
+  if (contact) ensureSmsPermission();
   qaInput.value = '';
   updatePreview();
   const cat = categoryById(task.category);
   toast(`ثبت شد: ${task.title}${task.due ? ' · ' + describeDue(task.due, task.hasTime) : ''} · ${cat.name}`, 'ویرایش', () => openSheet(task.id));
-  if (notificationsSupported() && Notification.permission === 'default' && task.remindAt) {
+  if (notifPermission() === 'default' && task.remindAt) {
     setTimeout(() => toast('برای دریافت یادآوری، اعلان‌ها را فعال کنید', 'فعال‌سازی', enableNotifications, 8000), 4600);
   }
   scheduleAhead();
@@ -321,6 +344,13 @@ function openSheet(id) {
     </div>
     <div class="field"><label for="fDur">مدت تقریبی</label><select id="fDur"><option value="">نامشخص</option>${DURATIONS.map((d) => `<option value="${d}" ${d === t.duration ? 'selected' : ''}>${d < 60 ? fa(d) + ' دقیقه' : fa(d / 60) + ' ساعت'}</option>`).join('')}</select></div>
     <div class="field"><label for="fNotes">یادداشت</label><textarea id="fNotes" rows="2">${esc(t.notes)}</textarea></div>
+    <div class="field"><label for="fSms">📩 یادآوری پیامکی به</label>
+      <select id="fSms"><option value="">هیچ‌کس</option>${state.contacts.map((c) => `<option value="${c.id}" ${c.id === t.smsTo ? 'selected' : ''}>${esc(c.name)} (${fa(c.phone)})</option>`).join('')}<option value="new">＋ مخاطب جدید…</option></select>
+      <div class="row2" id="fNewContact" hidden style="margin-top:6px"><input id="fNewName" placeholder="نام"><input id="fNewPhone" type="tel" inputmode="tel" placeholder="شماره موبایل" dir="ltr"></div>
+      <textarea id="fSmsMsg" rows="2" style="margin-top:6px" placeholder="${esc(smsText({ ...t, smsMessage: null }, contactById(t.smsTo) || { name: '…' }, state.settings, smsSendAt(t) || new Date()))}" ${t.smsTo ? '' : 'hidden'}>${esc(t.smsMessage || '')}</textarea>
+      <div class="hint">${esc(smsHint(t))}</div>
+      ${t.smsTo && !t.done ? '<div class="btns"><button class="btn ghost" data-s="smsnow">📩 همین الان پیامک بفرست</button></div>' : ''}
+    </div>
     <div class="btns"><button class="btn primary" data-s="save">ذخیره</button><button class="btn" data-s="toggle">${t.done ? 'برگرداندن' : '✓ انجام شد'}</button></div>
     ${t.done ? '' : `<div class="btns"><button class="btn ghost" data-s="p1h">⏱ ۱ ساعت بعد</button><button class="btn ghost" data-s="ptom">فردا</button><button class="btn ghost" data-s="pweek">هفته بعد</button></div>`}
     <div class="btns">${t.due && !t.done ? '<button class="btn ghost" data-s="ics">📆 افزودن به تقویم گوشی</button>' : ''}<button class="btn danger" data-s="delete">حذف</button></div>`;
@@ -329,6 +359,10 @@ function openSheet(id) {
   $('#sheetBackdrop').hidden = false;
 
   $('#fDate').addEventListener('input', (e) => { $('#fDateHint').textContent = jalaliHint(e.target.value); });
+  $('#fSms').addEventListener('change', (e) => {
+    $('#fNewContact').hidden = e.target.value !== 'new';
+    $('#fSmsMsg').hidden = !e.target.value;
+  });
   sheet.querySelectorAll('[data-qd]').forEach((b) => b.addEventListener('click', () => {
     const v = b.dataset.qd;
     $('#fDate').value = v === '' ? '' : toDateInput(new Date(Date.now() + v * 86400000));
@@ -358,6 +392,7 @@ function readSheet(t) {
     title: $('#fTitle').value.trim() || t.title, notes: $('#fNotes').value.trim(),
     due: due ? due.toISOString() : null, hasTime, category: $('#fCat').value, priority: +$('#fPri').value,
     recurrence: $('#fRep').value || null, remindOffset: rem === 'none' ? null : +rem, duration: $('#fDur').value ? +$('#fDur').value : null,
+    smsMessage: $('#fSmsMsg').value.trim() || null,
   };
 }
 
@@ -369,6 +404,15 @@ $('#sheet').addEventListener('click', (e) => {
   if (!t) return closeSheet();
   if (act === 'save') {
     const patch = readSheet(t);
+    const smsSel = $('#fSms').value;
+    if (smsSel === 'new') {
+      const phone = normalizePhone($('#fNewPhone').value);
+      const name = $('#fNewName').value.trim();
+      if (!name || !phone) { toast('نام و شمارهٔ موبایل معتبر وارد کنید'); return; }
+      patch.smsTo = addContact(name, phone).id;
+    } else patch.smsTo = smsSel || null;
+    if (patch.smsTo && patch.smsTo !== t.smsTo) ensureSmsPermission();
+    if (patch.smsTo && (!patch.due || patch.remindOffset === null)) toast('برای ارسال پیامک، تاریخ و یادآوری کار را مشخص کنید');
     if (patch.category !== t.category) { learn(state.learned, patch.title, patch.category); toast('دسته اصلاح شد؛ یاد گرفتم 👍'); }
     const moved = t.due && patch.due && new Date(patch.due) > new Date(t.due) && startOfDay(new Date(patch.due)) > startOfDay(new Date(t.due));
     updateTask(id, { ...patch, postponeCount: (t.postponeCount || 0) + (moved ? 1 : 0) });
@@ -386,6 +430,10 @@ $('#sheet').addEventListener('click', (e) => {
     if (t.hasTime) nd.setHours(base.getHours(), base.getMinutes());
     postponeTask(id, nd);
     toast(`منتقل شد به ${describeDue(nd, t.hasTime)}`);
+  } else if (act === 'smsnow') {
+    const c = contactById(t.smsTo);
+    if (c) sendSmsManually(c, $('#fSmsMsg').value.trim() || smsText({ ...t, smsMessage: null }, c, state.settings));
+    return;
   } else if (act === 'ics') {
     shareOrDownload(toICS([t]), 'task.ics', 'text/calendar');
     return;
@@ -418,7 +466,7 @@ $('#view').addEventListener('click', (e) => {
   else if (el.dataset.mode) { filters.mode = el.dataset.mode; $('#view').dataset.view = ''; render(); }
   else if (el.dataset.cat) { filters.cat = el.dataset.cat; $('#view').dataset.view = ''; render(); }
   else if (el.dataset.insight) runInsightAction(el.dataset.insight);
-  else if (el.dataset.action) runSettingsAction(el.dataset.action);
+  else if (el.dataset.action) runSettingsAction(el.dataset.action, el);
 });
 
 $('#view').addEventListener('input', (e) => {
@@ -456,7 +504,7 @@ function runInsightAction(action) {
   }
 }
 
-function runSettingsAction(action) {
+function runSettingsAction(action, el) {
   if (action === 'perm') enableNotifications();
   else if (action === 'export') shareOrDownload(exportData(), `monshi-backup-${toDateInput(new Date())}.json`, 'application/json');
   else if (action === 'import') $('#importFile').click();
@@ -466,10 +514,53 @@ function runSettingsAction(action) {
     shareOrDownload(toICS(list), 'monshi-tasks.ics', 'text/calendar');
   } else if (action === 'clear') {
     if (confirm('همهٔ کارها و تحلیل‌ها پاک شوند؟ این کار برگشت‌پذیر نیست.')) { clearAll(); toast('همه‌چیز پاک شد'); }
+  } else if (action === 'add-contact') {
+    const name = $('#cName').value.trim();
+    const phone = normalizePhone($('#cPhone').value);
+    if (!name || !phone) return toast('نام و شمارهٔ موبایل معتبر وارد کنید');
+    addContact(name, phone);
+    ensureSmsPermission();
+    rerenderSettings();
+    toast(`${name} اضافه شد`);
+  } else if (action === 'del-contact') {
+    deleteContact(el.dataset.cid);
+    rerenderSettings();
   }
 }
 
+function rerenderSettings() {
+  $('#view').dataset.view = '';
+  render();
+}
+
+async function ensureSmsPermission() {
+  if (!isNative) return;
+  if (await smsPermission() === 'granted') return;
+  if (await requestSmsPermission() !== 'granted') toast('بدون اجازهٔ پیامک، یادآوری پیامکی ارسال نمی‌شود');
+}
+
+function smsHint(t) {
+  if (!t.smsTo) return isNative ? 'سر وقت یادآوری، پیامک خودکار برای این شخص ارسال می‌شود.' : 'سر وقت یادآوری، برنامهٔ پیامک با متن آماده باز می‌شود.';
+  const at = smsSendAt(t);
+  const status = t.smsStatus ? SMS_STATUS_TEXT[t.smsStatus] + ' · ' : '';
+  return status + (at ? `زمان ارسال: ${describeDue(at, true)}` : 'زمان یادآوری مشخص نیست؛ پیامکی ارسال نمی‌شود.');
+}
+
+async function sendSmsManually(c, message) {
+  if (!isNative) { location.href = smsLink(c.phone, message); return; }
+  try { await sendSmsNow(c.phone, message); toast(`پیامک برای ${c.name} ارسال شد ✓`); }
+  catch (err) { toast('ارسال نشد: ' + (err?.message || err)); }
+}
+
 async function enableNotifications() {
+  if (isNative) {
+    const r = await requestNativePermissions();
+    nativePerm = r === 'granted' ? 'granted' : 'denied';
+    toast(r === 'granted' ? 'اعلان‌ها فعال شد ✓' : 'اجازهٔ اعلان داده نشد. از تنظیمات گوشی فعال کنید.');
+    syncNative();
+    rerenderSettings();
+    return;
+  }
   const r = await requestPermission();
   if (r === 'granted') { toast('اعلان‌ها فعال شد ✓'); notify('منشی من', { body: 'از این به بعد سر وقت خبرتان می‌کنم 🔔', dir: 'rtl', lang: 'fa', icon: 'icons/icon-192.png' }); scheduleAhead(); }
   else if (r === 'denied') toast('اجازهٔ اعلان داده نشد. از تنظیمات مرورگر آن را فعال کنید.');
@@ -501,15 +592,22 @@ if (params.get('task')) {
 }
 
 // ---------------- راه‌اندازی ----------------
+initNative(handleNotificationAction);
+if (isNative) nativePermission().then((r) => { nativePerm = r?.startsWith('prompt') ? 'default' : r; rerenderSettings(); });
 subscribe(() => {
+  syncNative();
   if (currentView === 'settings') return; // جلوگیری از پرش فرم تنظیمات هنگام تایپ
   render();
 });
 render();
 startScheduler((task) => {
-  if (task) {
+  const contact = task?.smsTo ? contactById(task.smsTo) : null;
+  if (task && contact && !isNative) {
+    // نسخهٔ وب امکان ارسال خودکار ندارد؛ برنامهٔ پیامک با متن آماده باز می‌شود
+    toast(`🔔 ${task.title} — پیامک به ${contact.name}`, 'ارسال پیامک', () => sendSmsManually(contact, smsText(task, contact, state.settings, smsSendAt(task) || new Date())), 30000);
+  } else if (task) {
     toast(`🔔 ${task.title}`, 'انجام شد', () => completeTask(task.id), 10000);
-  } else {
+  } else if (!isNative) {
     const text = briefText(state.tasks, state.settings);
     notify(`${greeting()}! گزارش امروز`, { body: text, tag: 'brief', dir: 'rtl', lang: 'fa', icon: 'icons/icon-192.png' });
   }
@@ -518,6 +616,7 @@ startScheduler((task) => {
 setInterval(render, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
 
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+syncNative();
+if (!isNative && 'serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

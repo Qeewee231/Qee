@@ -1,5 +1,6 @@
 // ذخیره‌سازی محلی (روی خود گوشی؛ بدون نیاز به اینترنت یا سرور)
 import { addJalaliMonths } from './jalali.js';
+import { DEFAULT_SMS_TEMPLATE } from './contacts.js';
 
 const KEY = 'monshi.v1';
 
@@ -10,6 +11,7 @@ export const DEFAULT_SETTINGS = {
   workStart: 8,
   workEnd: 18,
   sound: true,
+  smsTemplate: DEFAULT_SMS_TEMPLATE,
 };
 
 function read() {
@@ -20,7 +22,7 @@ function read() {
   return null;
 }
 
-export const state = Object.assign({ tasks: [], learned: {}, settings: { ...DEFAULT_SETTINGS }, meta: {} }, read() || {});
+export const state = Object.assign({ tasks: [], contacts: [], learned: {}, settings: { ...DEFAULT_SETTINGS }, meta: {} }, read() || {});
 state.settings = { ...DEFAULT_SETTINGS, ...state.settings };
 
 const listeners = new Set();
@@ -47,7 +49,7 @@ export function computeRemindAt(task, settings = state.settings) {
 export function addTask(data) {
   const task = {
     id: uid(), title: '', notes: '', category: 'personal', priority: 1,
-    due: null, hasTime: false, duration: null, recurrence: null, remindOffset: undefined,
+    due: null, hasTime: false, duration: null, recurrence: null, remindOffset: undefined, smsTo: null, smsMessage: null,
     done: false, doneAt: null, createdAt: new Date().toISOString(), postponeCount: 0, reminded: false,
     ...data,
   };
@@ -96,7 +98,7 @@ export function completeTask(id, now = new Date()) {
   if (t.recurrence && t.due) {
     let nd = nextOccurrence(t.due, t.recurrence);
     while (nd < now && t.recurrence === 'daily') nd = nextOccurrence(nd, 'daily');
-    const { id: _id, done, doneAt, createdAt, postponeCount, reminded, remindAt, ...rest } = t;
+    const { id: _id, done, doneAt, createdAt, postponeCount, reminded, remindAt, smsStatus, ...rest } = t;
     next = addTask({ ...rest, due: nd.toISOString() });
   }
   save();
@@ -127,13 +129,30 @@ export function importData(json) {
   if (!Array.isArray(data.tasks)) throw new Error('فایل پشتیبان معتبر نیست');
   state.tasks = data.tasks;
   state.learned = data.learned || {};
+  state.contacts = data.contacts || [];
   state.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
   save();
 }
 
 export function clearAll() {
   state.tasks = [];
+  state.contacts = [];
   state.learned = {};
   state.meta = {};
   save();
 }
+
+export function addContact(name, phone) {
+  const c = { id: uid(), name: name.trim(), phone };
+  state.contacts.push(c);
+  save();
+  return c;
+}
+
+export function deleteContact(id) {
+  state.contacts = state.contacts.filter((c) => c.id !== id);
+  state.tasks.forEach((t) => { if (t.smsTo === id) t.smsTo = null; });
+  save();
+}
+
+export const contactById = (id) => state.contacts.find((c) => c.id === id) || null;

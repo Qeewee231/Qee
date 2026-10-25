@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">منشی من</string>
+    <string name="title_activity_main">منشی من</string>
+    <string name="package_name">ir.monshi.app</string>
+    <string name="custom_url_scheme">ir.monshi.app</string>
+</resources>

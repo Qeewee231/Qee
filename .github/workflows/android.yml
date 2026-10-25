@@ -1,0 +1,74 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main, master, 'claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Copy web app into Android project
+        run: npm run build:web && npx cap sync android
+
+      # کلید دیباگ بین اجراها ثابت می‌ماند تا به‌روزرسانی روی گوشی بدون حذف برنامه ممکن باشد
+      - name: Keep debug signing key stable
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: monshi-debug-keystore
+
+      # کلید امضا از GitHub Secrets ساخته می‌شود (در صورت نبودن، APK با کلید دیباگ امضا می‌شود)
+      - name: Prepare signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.MONSHI_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.MONSHI_KEYSTORE_PASSWORD }}
+        if: env.KEYSTORE_BASE64 != ''
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/monshi-release.jks
+          printf 'storeFile=monshi-release.jks\nstorePassword=%s\nkeyAlias=monshi\nkeyPassword=%s\n' "$KEYSTORE_PASSWORD" "$KEYSTORE_PASSWORD" > android/keystore.properties
+
+      - name: Build signed APK
+        working-directory: android
+        run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk monshi.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monshi-apk
+          path: monshi.apk
+
+      - name: Publish release (download link for the phone)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: منشی من — نسخهٔ ${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          files: monshi.apk
+          body: |
+            فایل `monshi.apk` را روی گوشی اندروید دانلود و نصب کنید.
+            شاخه: ${{ github.ref_name }}
