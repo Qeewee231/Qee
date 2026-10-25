@@ -1,0 +1,11 @@
+{
+  "name": "monshi",
+  "version": "1.0.0",
+  "description": "منشی هوشمند — مدیریت، تحلیل و یادآوری کارهای روزانه",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "start": "python3 -m http.server 8080"
+  }
+}

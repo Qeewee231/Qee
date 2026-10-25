@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>منشی من</title>
+  <meta name="description" content="منشی هوشمند: ثبت، دسته‌بندی، تحلیل و یادآوری کارهای روزانه">
+  <meta name="theme-color" content="#3b4cca">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="منشی من">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;800&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="hello" id="hello">سلام</div>
+      <div class="today-date" id="todayDate"></div>
+    </div>
+    <button class="icon-btn" id="bellBtn" title="فعال‌سازی اعلان‌ها" aria-label="اعلان‌ها">🔔</button>
+  </header>
+
+  <main id="view" aria-live="polite"></main>
+
+  <form class="quick-add" id="quickAdd" autocomplete="off">
+    <div class="chips" id="previewChips"></div>
+    <div class="qa-row">
+      <input id="qaInput" type="text" enterkeyhint="done" placeholder="مثلاً: فردا ساعت ۱۰ جلسه با مدیر، فوری" aria-label="کار جدید">
+      <button type="button" class="icon-btn mic" id="micBtn" aria-label="ثبت با صدا" hidden>🎙️</button>
+      <button type="submit" class="add-btn" aria-label="افزودن">＋</button>
+    </div>
+  </form>
+
+  <nav class="tabbar" id="tabbar">
+    <button data-view="today" class="active"><span>🏠</span>امروز</button>
+    <button data-view="tasks"><span>📋</span>کارها</button>
+    <button data-view="stats"><span>📊</span>تحلیل</button>
+    <button data-view="settings"><span>⚙️</span>تنظیمات</button>
+  </nav>
+
+  <div class="sheet-backdrop" id="sheetBackdrop" hidden></div>
+  <section class="sheet" id="sheet" hidden role="dialog" aria-modal="true"></section>
+  <div class="toast" id="toast" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
