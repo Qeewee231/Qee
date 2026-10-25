@@ -9,6 +9,20 @@ const Cap = window.Capacitor;
 export const isNative = !!Cap?.isNativePlatform?.();
 const LN = isNative ? Cap.registerPlugin('LocalNotifications') : null;
 const SMS = isNative ? Cap.registerPlugin('SmsScheduler') : null;
+const Picker = isNative ? Cap.registerPlugin('ContactPicker') : null;
+
+/** انتخاب مخاطب از دفترچهٔ تلفن گوشی (اندروید، یا Contact Picker مرورگر Chrome) */
+export const contactPickerSupported = isNative || !!(navigator.contacts && navigator.contacts.select);
+
+export async function pickPhoneContact() {
+  if (isNative) {
+    const r = await Picker.pick();
+    return r.cancelled ? null : { name: r.name || '', phone: r.phone || '' };
+  }
+  if (!contactPickerSupported) return null;
+  const [c] = await navigator.contacts.select(['name', 'tel'], { multiple: false });
+  return c ? { name: c.name?.[0] || '', phone: c.tel?.[0] || '' } : null;
+}
 export const smsAutoSupported = isNative;
 
 const BRIEF_ID = 2000000001;

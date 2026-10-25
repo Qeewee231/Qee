@@ -143,6 +143,8 @@ export function clearAll() {
 }
 
 export function addContact(name, phone) {
+  const existing = state.contacts.find((c) => c.phone === phone);
+  if (existing) return existing;
   const c = { id: uid(), name: name.trim(), phone };
   state.contacts.push(c);
   save();

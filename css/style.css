@@ -165,3 +165,5 @@ h2 .count { font-weight: 500; font-size: 13px; }
 .contact { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--bg); border-radius: 12px; padding: 6px 12px; font-size: 14px; }
 .contact .btn { padding: 4px 8px; }
 textarea.search { resize: vertical; }
+.time24 { display: flex; align-items: center; gap: 6px; }
+.time24 select { flex: 1; text-align: center; }

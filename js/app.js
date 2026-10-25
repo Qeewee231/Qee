@@ -1,6 +1,6 @@
 import { state, save, subscribe, addTask, updateTask, deleteTask, completeTask, uncompleteTask, postponeTask, snooze, exportData, importData, clearAll, addContact, deleteContact, contactById } from './store.js';
 import { extractContact, normalizePhone, smsText } from './contacts.js';
-import { isNative, initNative, syncNative, requestNativePermissions, nativePermission, requestSmsPermission, smsPermission, sendSmsNow, smsLink, smsSendAt, SMS_STATUS_TEXT } from './native.js';
+import { isNative, initNative, syncNative, requestNativePermissions, nativePermission, requestSmsPermission, smsPermission, sendSmsNow, smsLink, smsSendAt, SMS_STATUS_TEXT, contactPickerSupported, pickPhoneContact } from './native.js';
 import { parseTask, describeDue } from './parser.js';
 import { CATEGORIES, categoryById, classify, learn } from './classifier.js';
 import { fa, formatJalali, formatTime, toJalali, WEEKDAYS, pad2 } from './jalali.js';
@@ -180,6 +180,7 @@ function renderSettings() {
       <div class="contacts">${state.contacts.map((c) => `<div class="contact"><span><b>${esc(c.name)}</b> · <span dir="ltr">${fa(c.phone)}</span></span><button class="btn danger" data-action="del-contact" data-cid="${c.id}">حذف</button></div>`).join('') || '<p class="note">هنوز مخاطبی اضافه نکرده‌اید.</p>'}</div>
       <div class="row2"><input id="cName" class="search" placeholder="نام (مثلاً علی)"><input id="cPhone" class="search" type="tel" inputmode="tel" dir="ltr" placeholder="09123456789"></div>
       <button class="btn" data-action="add-contact" style="width:100%;margin-top:8px">＋ افزودن مخاطب</button>
+      ${contactPickerSupported ? '<button class="btn primary" data-action="pick-contact" style="width:100%;margin-top:8px">📱 انتخاب از مخاطبین گوشی</button>' : ''}
       <label for="sTpl" class="note" style="display:block;margin-top:12px">متن پیامک ({نام}، {کار} و {زمان} جایگزین می‌شوند)</label>
       <textarea id="sTpl" class="search" data-setting="smsTemplate" rows="2">${esc(st.smsTemplate)}</textarea>
       <p class="note">در ثبت سریع بنویسید: «فردا ساعت ۹ تحویل گزارش <b>@علی</b>» یا «فردا ساعت ۹ تحویل گزارش، <b>به علی پیامک بده</b>».</p>
@@ -320,6 +321,18 @@ function jalaliHint(value) {
   return `${formatJalali(date, { year: true })} — ${describeDue(date, false)}`;
 }
 
+/** انتخاب ساعت ۲۴ ساعته (ورودی time مرورگر در بسیاری از گوشی‌ها ق.ظ/ب.ظ نشان می‌دهد) */
+function timePicker(date) {
+  const h = date ? date.getHours() : null;
+  const m = date ? date.getMinutes() : 0;
+  const mins = [...new Set([...Array.from({ length: 12 }, (_, i) => i * 5), m])].sort((a, b) => a - b);
+  return `<div class="time24" dir="ltr">
+    <select id="fHour" aria-label="ساعت"><option value="">--</option>${Array.from({ length: 24 }, (_, i) => `<option value="${pad2(i)}" ${i === h ? 'selected' : ''}>${fa(pad2(i))}</option>`).join('')}</select>
+    <b>:</b>
+    <select id="fMin" aria-label="دقیقه">${mins.map((i) => `<option value="${pad2(i)}" ${i === m ? 'selected' : ''}>${fa(pad2(i))}</option>`).join('')}</select>
+  </div>`;
+}
+
 function openSheet(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t) return;
@@ -330,7 +343,7 @@ function openSheet(id) {
     <div class="field"><label for="fTitle">عنوان</label><input id="fTitle" value="${esc(t.title)}"></div>
     <div class="row2">
       <div class="field"><label for="fDate">تاریخ</label><input id="fDate" type="date" value="${due ? toDateInput(due) : ''}"></div>
-      <div class="field"><label for="fTime">ساعت</label><input id="fTime" type="time" value="${due && t.hasTime ? pad2(due.getHours()) + ':' + pad2(due.getMinutes()) : ''}"></div>
+      <div class="field"><label for="fHour">ساعت (۲۴ ساعته)</label>${timePicker(due && t.hasTime ? due : null)}</div>
     </div>
     <div class="field" style="margin-top:-8px"><div class="hint" id="fDateHint">${esc(jalaliHint(due ? toDateInput(due) : ''))}</div>
       <div class="quick-dates">${[['0', 'امروز'], ['1', 'فردا'], ['2', 'پس‌فردا'], ['7', 'هفته بعد'], ['', 'بدون تاریخ']].map(([k, v]) => `<button type="button" class="pill" data-qd="${k}">${v}</button>`).join('')}</div></div>
@@ -345,7 +358,7 @@ function openSheet(id) {
     <div class="field"><label for="fDur">مدت تقریبی</label><select id="fDur"><option value="">نامشخص</option>${DURATIONS.map((d) => `<option value="${d}" ${d === t.duration ? 'selected' : ''}>${d < 60 ? fa(d) + ' دقیقه' : fa(d / 60) + ' ساعت'}</option>`).join('')}</select></div>
     <div class="field"><label for="fNotes">یادداشت</label><textarea id="fNotes" rows="2">${esc(t.notes)}</textarea></div>
     <div class="field"><label for="fSms">📩 یادآوری پیامکی به</label>
-      <select id="fSms"><option value="">هیچ‌کس</option>${state.contacts.map((c) => `<option value="${c.id}" ${c.id === t.smsTo ? 'selected' : ''}>${esc(c.name)} (${fa(c.phone)})</option>`).join('')}<option value="new">＋ مخاطب جدید…</option></select>
+      <select id="fSms"><option value="">هیچ‌کس</option>${state.contacts.map((c) => `<option value="${c.id}" ${c.id === t.smsTo ? 'selected' : ''}>${esc(c.name)} (${fa(c.phone)})</option>`).join('')}${contactPickerSupported ? '<option value="phonebook">📱 انتخاب از مخاطبین گوشی…</option>' : ''}<option value="new">＋ مخاطب جدید…</option></select>
       <div class="row2" id="fNewContact" hidden style="margin-top:6px"><input id="fNewName" placeholder="نام"><input id="fNewPhone" type="tel" inputmode="tel" placeholder="شماره موبایل" dir="ltr"></div>
       <textarea id="fSmsMsg" rows="2" style="margin-top:6px" placeholder="${esc(smsText({ ...t, smsMessage: null }, contactById(t.smsTo) || { name: '…' }, state.settings, smsSendAt(t) || new Date()))}" ${t.smsTo ? '' : 'hidden'}>${esc(t.smsMessage || '')}</textarea>
       <div class="hint">${esc(smsHint(t))}</div>
@@ -359,14 +372,21 @@ function openSheet(id) {
   $('#sheetBackdrop').hidden = false;
 
   $('#fDate').addEventListener('input', (e) => { $('#fDateHint').textContent = jalaliHint(e.target.value); });
-  $('#fSms').addEventListener('change', (e) => {
+  $('#fSms').addEventListener('change', async (e) => {
+    if (e.target.value === 'phonebook') {
+      const c = await choosePhoneContact();
+      if (c) {
+        if (!e.target.querySelector(`option[value="${c.id}"]`)) e.target.querySelector('option[value="phonebook"]').insertAdjacentHTML('beforebegin', `<option value="${c.id}">${esc(c.name)} (${fa(c.phone)})</option>`);
+        e.target.value = c.id;
+      } else e.target.value = t.smsTo || '';
+    }
     $('#fNewContact').hidden = e.target.value !== 'new';
     $('#fSmsMsg').hidden = !e.target.value;
   });
   sheet.querySelectorAll('[data-qd]').forEach((b) => b.addEventListener('click', () => {
     const v = b.dataset.qd;
     $('#fDate').value = v === '' ? '' : toDateInput(new Date(Date.now() + v * 86400000));
-    if (v === '') $('#fTime').value = '';
+    if (v === '') $('#fHour').value = '';
     $('#fDateHint').textContent = jalaliHint($('#fDate').value);
   }));
 }
@@ -377,7 +397,8 @@ function closeSheet() {
 }
 
 function readSheet(t) {
-  const date = $('#fDate').value, time = $('#fTime').value;
+  const date = $('#fDate').value;
+  const time = $('#fHour').value === '' ? '' : `${$('#fHour').value}:${$('#fMin').value}`;
   let due = null, hasTime = false;
   if (date) {
     const [y, m, d] = date.split('-').map(Number);
@@ -522,9 +543,27 @@ function runSettingsAction(action, el) {
     ensureSmsPermission();
     rerenderSettings();
     toast(`${name} اضافه شد`);
+  } else if (action === 'pick-contact') {
+    choosePhoneContact().then((c) => { if (c) { rerenderSettings(); toast(`${c.name} اضافه شد`); } });
   } else if (action === 'del-contact') {
     deleteContact(el.dataset.cid);
     rerenderSettings();
+  }
+}
+
+/** مخاطب را از دفترچهٔ تلفن انتخاب و به مخاطبین منشی اضافه می‌کند */
+async function choosePhoneContact() {
+  try {
+    const picked = await pickPhoneContact();
+    if (!picked) return null;
+    const phone = normalizePhone(picked.phone);
+    if (!phone) { toast('این مخاطب شمارهٔ موبایل معتبر ندارد'); return null; }
+    const c = addContact(picked.name || phone, phone);
+    ensureSmsPermission();
+    return c;
+  } catch (err) {
+    toast('دسترسی به مخاطبین ممکن نشد: ' + (err?.message || err));
+    return null;
   }
 }
 
